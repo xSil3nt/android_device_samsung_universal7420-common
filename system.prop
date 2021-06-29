@@ -96,11 +96,11 @@ ro.telephony.ril_class=SlteRIL
 telephony.lteOnGsmDevice=1
 
 # read single/dual-SIM properties
-import /vendor/etc/properties/radio.prop
-import /efs/factory.prop
+#import /vendor/etc/properties/radio.prop
+#import /efs/factory.prop
 
 # read model properties
-import /init.rilchip.prop
+#import /init.rilchip.prop
 
 #
 # SoC
