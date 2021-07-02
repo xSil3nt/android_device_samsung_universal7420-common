@@ -127,6 +127,18 @@ wlan.wfd.hdcp=disable
 persist.debug.wfd.enable=1
 persist.sys.wfd.virtual=0
 
+
+#
+# Debug
+#
+ro.adb.secure=0
+ro.debuggable=1
+persist.service.adb.enable=1
+persist.sys.usb.config=adb
+service.adb.root=1
+
+
+
 #
 # END zero device-properties
 ###
