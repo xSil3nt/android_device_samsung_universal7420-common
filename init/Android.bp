@@ -5,6 +5,9 @@ cc_library_static {
         "init_sec.cpp",
     ],
     whole_static_libs: ["libbase"],
+        shared_libs: [
+        "libbase",
+    ],
     include_dirs: [
         "system/core/base/include",
         "system/core/init",

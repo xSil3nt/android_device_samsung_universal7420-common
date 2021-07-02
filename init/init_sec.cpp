@@ -1,254 +1,225 @@
-/*
-   Copyright (c) 2015, The Dokdo Project. All rights reserved.
-   Redistribution and use in source and binary forms, with or without
-   modification, are permitted provided that the following conditions are
-   met:
-    * Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above
-      copyright notice, this list of conditions and the following
-      disclaimer in the documentation and/or other materials provided
-      with the distribution.
-    * Neither the name of The Linux Foundation nor the names of its
-      contributors may be used to endorse or promote products derived
-      from this software without specific prior written permission.
-   THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
-   WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
-   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
-   ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
-   BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
-   BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
-   WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
-   OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
-   IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-   File Name : init_sec.c
-   Create Date : 2015.11.03
-   Author : Sunghun Ra
-*/
-
-#define LOG_TAG "libinit_sec"
-
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
+#include <android-base/file.h>
+#include <android-base/logging.h>
 #include <android-base/properties.h>
-#include <log/log.h>
+#include <android-base/strings.h>
 
 #include "property_service.h"
 #include "vendor_init.h"
 
-#include "init_sec.h"
+#define _REALLY_INCLUDE_SYS__SYSTEM_PROPERTIES_H_
+#include <sys/_system_properties.h>
 
-using namespace std;
-using namespace android;
+using android::base::GetProperty;
+using android::base::ReadFileToString;
+using android::base::Trim;
 
-namespace android {
-namespace init {
+#define SERIAL_NUMBER_FILE "/efs/FactoryApp/serial_no"
+
+// copied from build/tools/releasetools/ota_from_target_files.py
+// but with "." at the end and empty entry
+std::vector<std::string> ro_product_props_default_source_order = {
+    "",
+    "product.",
+    "product_services.",
+    "odm.",
+    "vendor.",
+    "system.",
+    "system_ext.",
+};
+
+void property_override(char const prop[], char const value[], bool add = true)
+{
+    auto pi = (prop_info *) __system_property_find(prop);
+
+    if (pi != nullptr) {
+        __system_property_update(pi, value, strlen(value));
+    } else if (add) {
+        __system_property_add(prop, strlen(prop), value, strlen(value));
+    }
+}
 
 void vendor_load_properties()
-{    
-    string device_orig = base::GetProperty("ro.product.device", "");
-    string bootloader = base::GetProperty("ro.bootloader", "");
-    string model, device, product;
-    bool dualsim = false;
+{
+    const std::string bootloader = GetProperty("ro.bootloader", "");
 
-/*
- * Flat
- */
-if (bootloader.find("G920") != string::npos) {
+    char const *serial_number_file = SERIAL_NUMBER_FILE;
+    std::string serial_number;
 
-    product = "zeroflte";
-
-    if (bootloader.find("G920F") != string::npos) {
-        if (device_orig != "zeroflteduo") {
-            model = "SM-G920F";
-            device = "zerofltexx";
+    if (ReadFileToString(serial_number_file, &serial_number)) {
+        serial_number = Trim(serial_number);
+        if (serial_number != "00000000000") {
+            property_override("ro.serialno", serial_number.c_str());
         }
-    } else if (bootloader.find("G920I") != string::npos) {
-        model = "SM-G920I";
-        device = "zerofltexx";
-    } else if (bootloader.find("G920K") != string::npos) {
-        model = "SM-G920K";
-        device = "zerofltektt";
-    } else if (bootloader.find("G920L") != string::npos) {
-        model = "SM-G920L";
-        device = "zerofltelgt";
-    } else if (bootloader.find("G920P") != string::npos) {
-        model = "SM-G920P";
-        device = "zerofltespr";
-    } else if (bootloader.find("G920S") != string::npos) {
-        model = "SM-G920S";
-        device = "zeroflteskt";
-    } else if (bootloader.find("G920T") != string::npos) {
-        model = "SM-G920T";
-        device = "zerofltetmo";
-    } else if (bootloader.find("G920W8") != string::npos) {
-        model = "SM-G920W8";
-        device = "zerofltecan";
     }
-}
+            property_override("ro.boot.warranty_bit", "0");
+            property_override("ro.warranty_bit", "0");
+            property_override("ro.boot.veritymode", "enforcing");
+            property_override("ro.boot.verifiedbootstate", "green");
+            property_override("ro.boot.flash.locked", "1");
+            property_override("ro.boot.ddrinfo", "00000001");
+            property_override("ro.build.selinux", "1");
+            property_override("ro.fmp_config", "1");
+            property_override("ro.boot.fmp_config", "1");
+            property_override("sys.oem_unlock_allowed", "0");
 
-/*
- * Edge
- */
-else if (bootloader.find("G925") != string::npos) {
+    const auto set_ro_product_prop = [](const std::string &source,
+            const std::string &prop, const std::string &value) {
+        auto prop_name = "ro.product." + source + prop;
+        property_override(prop_name.c_str(), value.c_str(), false);
+    };
 
-     product = "zerolte";
-
-     if (bootloader.find("G925F") != string::npos) {
-        if (device_orig != "zeroflteduo") {
-            model = "SM-G925F";
-            device = "zeroltexx";
+    if (bootloader.find("N920I") == 0) {
+        /* nobleltedv */
+        for (const auto &source : ro_product_props_default_source_order) {
+            set_ro_product_prop(source, "fingerprint", "samsung/nobleltejv/noblelte:7.0/NRD90M/N920CXXU3CQH6:user/release-keys");
+            set_ro_product_prop(source, "device", "nobleltedv");
+            set_ro_product_prop(source, "model", "SM-N920I");
+            set_ro_product_prop(source, "name", "nobleltedv");
+        }   
+        property_override("ro.build.description", "nobleltejv-user 7.0 LMY47X N920CXXU3CQH6 release-keys");
+        property_override("ro.build.product", "nobleltedv");
+    } else if (bootloader.find("I9505G") == 0) {
+        /* jgedlte */
+        for (const auto &source : ro_product_props_default_source_order) {
+            set_ro_product_prop(source, "fingerprint", "samsung/jgedlteue/jgedlte:5.1/LMY47O.S008/160301:user/release-keys");
+            set_ro_product_prop(source, "device", "jgedlte");
+            set_ro_product_prop(source, "model", "GT-I9505G");
+            set_ro_product_prop(source, "name", "jgedlteu");
         }
-    } else if (bootloader.find("G925I") != string::npos) {
-        model = "SM-G925I";
-        device = "zeroltexx";
-    } else if (bootloader.find("G925K") != string::npos) {
-        model = "SM-G925K";
-        device = "zeroltektt";
-    } else if (bootloader.find("G925L") != string::npos) {
-        model = "SM-G925L";
-        device = "zeroltelgt";
-    } else if (bootloader.find("G925P") != string::npos) {
-        model = "SM-G925P";
-        device = "zeroltespr";
-    } else if (bootloader.find("G925S") != string::npos) {
-        model = "SM-G925S";
-        device = "zerolteskt";
-    } else if (bootloader.find("G925T") != string::npos) {
-        model = "SM-G925T";
-        device = "zeroltetmo";
-    } else if (bootloader.find("G925W8") != string::npos) {
-        model = "SM-G925W8";
-        device = "zeroltecan";
-    }
-}
-
-/*
- * Edge Plus
- */
-else if (bootloader.find("G928") != string::npos) {
-    
-    product = "zenlte";
-
-     if (bootloader.find("G928F") != string::npos) {
-        if (device_orig != "zenltexx") {
-            model = "SM-G928F";
-            device = "zenltexx";
-        }	
-    } else if (bootloader.find("G928C") != string::npos) {	
-        model = "SM-G928C";
-        device = "zenltejv";	
-    } else if (bootloader.find("G928I") != string::npos) {	
-        model = "SM-G928I";	
-        device = "zenltedv";	
-    } else if (bootloader.find("G928G") != string::npos) {	
-        model = "SM-G928G";
-        device = "zenltedd";	
-    } else if (bootloader.find("G928K") != string::npos) {	
-        model = "SM-G928K";
-        device = "zenltektt";
-    } else if (bootloader.find("G928L") != string::npos) {	
-        model = "SM-G928L";
-        device = "zenltelgt";
-    } else if (bootloader.find("G928S") != string::npos) {	
-        model = "SM-G928S";
-        device = "zenlteskt";
-    } else if (bootloader.find("G928T") != string::npos) {	
-        model = "SM-G928T";
-        device = "zenltetmo";
-    } else if (bootloader.find("G928W8") != string::npos) {	
-        model = "SM-G928W8";
-        device = "zenltecan";
-    }
-}
-
-/*	
- * Note 5	
- */
-else if (bootloader.find("N920") != string::npos) {
-
-     product = "noblelte";
-	
-     if (bootloader.find("N920C") != string::npos) {	
-        if (device_orig != "nobleltejv") {	
-            model = "SM-N920C";
-            device = "nobleltejv";
-            dualsim = true;
+        property_override("ro.build.description", "jgedlteue-user 5.1 LMY47O.S008 160301 release-keys");
+        property_override("ro.build.product", "jgedlte");
+    } else if (bootloader.find("I9505") == 0) {
+        /* jfltexx */
+        for (const auto &source : ro_product_props_default_source_order) {
+            set_ro_product_prop(source, "fingerprint", "samsung/jfltexx/jflte:5.0.1/LRX22C/I9505XXUHQK1:user/release-keys");
+            set_ro_product_prop(source, "device", "jflte");
+            set_ro_product_prop(source, "model", "GT-I9505");
+            set_ro_product_prop(source, "name", "jfltexx");
         }
-    } else if (bootloader.find("N9208") != string::npos) {	
-        model = "SM-N9208";
-        device = "nobleltezt";
-        dualsim = true;
-    } else if (bootloader.find("N920G") != string::npos) {	
-        model = "SM-N920G";
-        device = "nobleltedd";
-    } else if (bootloader.find("N920I") != string::npos) {	
-        model = "SM-N920I";
-        device = "nobleltedv";
-    } else if (bootloader.find("N920P") != string::npos) {	
-        model = "SM-N920P";
-        device = "nobleltespr";
-    } else if (bootloader.find("N920S") != string::npos) {	
-        model = "SM-N920S";
-        device = "noblelteskt";
-    } else if (bootloader.find("N920K") != string::npos) {	
-        model = "SM-N920K";
-        device = "nobleltektt";
-    } else if (bootloader.find("N920L") != string::npos) {	
-        model = "SM-N920L";
-        device = "nobleltelgt";
-    } else if (bootloader.find("N920T") != string::npos) {	
-        model = "SM-N920T";
-        device = "nobleltetmo";
-    } else if (bootloader.find("N920W8") != string::npos) {	
-        model = "SM-N920W8";
-        device = "nobleltecan";
+        property_override("ro.build.description", "jfltexx-user 5.0.1 LRX22C I9505XXUHQK1 release-keys");
+        property_override("ro.build.product", "jflte");
+    } else if (bootloader.find("R970C") == 0) {
+        /* jfltecri */
+        for (const auto &source : ro_product_props_default_source_order) {
+            set_ro_product_prop(source, "fingerprint", "samsung/jfltecri/jfltecri:4.4.2/KOT49H/R970CVVUFNC6:user/release-keys");
+            set_ro_product_prop(source, "device", "jfltecri");
+            set_ro_product_prop(source, "model", "SCH-R970C");
+            set_ro_product_prop(source, "name", "jfltecri");
+        }
+        property_override("ro.build.description", "jfltecri-user 4.4.2 KOT49H R970CVVUFNC6 release-keys");
+        property_override("ro.build.product", "jfltecri");
+        property_override("ro.cdma.home.operator.alpha", "Cricket");
+        property_override("ro.cdma.home.operator.numeric", "310090");
+    } else if (bootloader.find("R970X") == 0) {
+        /* jfltecsp */
+        for (const auto &source : ro_product_props_default_source_order) {
+            set_ro_product_prop(source, "fingerprint", "samsung/jfltecsp/jfltecsp:5.0.1/LRX22C/R970XWWUGOH1:user/release-keys");
+            set_ro_product_prop(source, "device", "jfltecsp");
+            set_ro_product_prop(source, "model", "SCH-R970X");
+            set_ro_product_prop(source, "name", "jfltecsp");
+        }
+        property_override("ro.build.description", "jfltecsp-user 5.0.1 LRX22C R970XWWUGOH1 release-keys");
+        property_override("ro.build.product", "jfltecsp");
+        property_override("ro.cdma.home.operator.alpha", "C Spire");
+        property_override("ro.cdma.home.operator.numeric", "311230");
+    } else if (bootloader.find("R970") == 0) {
+        /* jflteusc */
+        for (const auto &source : ro_product_props_default_source_order) {
+            set_ro_product_prop(source, "fingerprint", "samsung/jflteusc/jflteusc:5.0.1/LRX22C/R970TYUGPD5:user/release-keys");
+            set_ro_product_prop(source, "device", "jflteusc");
+            set_ro_product_prop(source, "model", "SCH-R970");
+            set_ro_product_prop(source, "name", "jflteusc");
+        }
+        property_override("ro.build.description", "jflteusc-user 5.0.1 LRX22C R970TYUGPD5 release-keys");
+        property_override("ro.build.product", "jflteusc");
+        property_override("ro.cdma.home.operator.alpha", "U.S. Cellular");
+        property_override("ro.cdma.home.operator.numeric", "311580");
+    } else if (bootloader.find("L720") == 0) {
+        /* jfltespr */
+        for (const auto &source : ro_product_props_default_source_order) {
+            set_ro_product_prop(source, "fingerprint", "samsung/jfltespr/jfltespr:5.0.1/LRX22C/L720VPSGPL1:user/release-keys");
+            set_ro_product_prop(source, "device", "jfltespr");
+            set_ro_product_prop(source, "model", "SPH-L720");
+            set_ro_product_prop(source, "name", "jfltespr");
+        }
+        property_override("ro.build.description", "jfltespr-user 5.0.1 LRX22C L720VPSGPL1 release-keys");
+        property_override("ro.build.product", "jfltespr");
+        property_override("ro.cdma.home.operator.alpha", "Sprint");
+        property_override("ro.cdma.home.operator.numeric", "310120");
+    } else if (bootloader.find("I337M") == 0) {
+        /* jfltecan */
+        for (const auto &source : ro_product_props_default_source_order) {
+            set_ro_product_prop(source, "fingerprint", "samsung/jfltevl/jfltecan:5.0.1/LRX22C/I337MVLSGQB1:user/release-keys");
+            set_ro_product_prop(source, "device", "jfltecan");
+            set_ro_product_prop(source, "model", "SGH-I337M");
+            set_ro_product_prop(source, "name", "jfltevl");
+        }
+        property_override("ro.build.description", "jfltevl-user 5.0.1 LRX22C I337MVLSGQB1 release-keys");
+        property_override("ro.build.product", "jfltecan");
+    } else if (bootloader.find("I337") == 0) {
+        /* jflteatt */
+        for (const auto &source : ro_product_props_default_source_order) {
+            set_ro_product_prop(source, "fingerprint", "samsung/jflteuc/jflteatt:5.0.1/LRX22C/I337UCUGOC3:user/release-keys");
+            set_ro_product_prop(source, "device", "jflteatt");
+            set_ro_product_prop(source, "model", "SGH-I337");
+            set_ro_product_prop(source, "name", "jflteuc");
+        }
+        property_override("ro.build.description", "jflteuc-user 5.0.1 LRX22C I337UCUGOC3 release-keys");
+        property_override("ro.build.product", "jflteatt");
+    } else if (bootloader.find("I9515L") == 0) {
+        /* jfvelteub */
+        for (const auto &source : ro_product_props_default_source_order) {
+            set_ro_product_prop(source, "fingerprint", "samsung/jfvelteub/jfvelte:5.0.1/LRX22C/I9515LUBU1BQF1:user/release-keys");
+            set_ro_product_prop(source, "device", "jfvelte");
+            set_ro_product_prop(source, "model", "GT-I9515L");
+            set_ro_product_prop(source, "name", "jfvelteub");
+        }
+        property_override("ro.build.description", "jfvelteub-user 5.0.1 LRX22C I9515LUBU1BQF1 release-keys");
+        property_override("ro.build.product", "jfvelte");
+    } else if (bootloader.find("I9515") == 0) {
+        /* jfvelte */
+        for (const auto &source : ro_product_props_default_source_order) {
+            set_ro_product_prop(source, "fingerprint", "samsung/jfveltexx/jfvelte:5.0.1/LRX22C/I9515XXS1BQD2:user/release-keys");
+            set_ro_product_prop(source, "device", "jfvelte");
+            set_ro_product_prop(source, "model", "GT-I9515");
+            set_ro_product_prop(source, "name", "jfveltexx");
+        }
+        property_override("ro.build.description", "jfveltexx-user 5.0.1 LRX22C I9515XXS1BQD2 release-keys");
+        property_override("ro.build.product", "jfvelte");
+    } else if (bootloader.find("I545L") == 0) {
+        /* jfltelra */
+        for (const auto &source : ro_product_props_default_source_order) {
+            set_ro_product_prop(source, "fingerprint", "samsung/jfltelra/jfltelra:5.0.1/LRX22C/I545LWWUGOH1:user/release-keys");
+            set_ro_product_prop(source, "device", "jfltelra");
+            set_ro_product_prop(source, "model", "SCH-I545L");
+            set_ro_product_prop(source, "name", "jfltelra");
+        }
+        property_override("ro.build.description", "jfltelra-user 5.0.1 LRX22C I545LWWUGOH1 release-keys");
+        property_override("ro.build.product", "jfltelra");
+    } else if (bootloader.find("I545") == 0) {
+        /* jfltevzw */
+        for (const auto &source : ro_product_props_default_source_order) {
+            set_ro_product_prop(source, "fingerprint", "Verizon/jfltevzw/jfltevzw:5.0.1/LRX22C/I545VRSGPL1:user/release-keys");
+            set_ro_product_prop(source, "device", "jfltevzw");
+            set_ro_product_prop(source, "model", "SCH-I545");
+            set_ro_product_prop(source, "name", "jfltevzw");
+        }
+        property_override("ro.build.description", "jfltevzw-user 5.0.1 LRX22C I545VRSGPL1 release-keys");
+        property_override("ro.build.product", "jfltevzw");
+    } else if (bootloader.find("I9295") == 0) {
+        /* jactivelte */
+        for (const auto &source : ro_product_props_default_source_order) {
+            set_ro_product_prop(source, "fingerprint", "samsung/jactiveltexx/jactivelte:5.0.1/LRX22C/I9295XXUDPF1:user/release-keys");
+            set_ro_product_prop(source, "device", "jactivelte");
+            set_ro_product_prop(source, "model", "GT-I9295");
+            set_ro_product_prop(source, "name", "jactiveltexx");
+        }
+        property_override("ro.build.description", "jactiveltexx-user 5.0.1 LRX22C I9295XXUDPF1 release-keys");
+        property_override("ro.build.product", "jactivelte");
     }
-}
 
-    // load original properties
-    string description_orig = base::GetProperty("ro.build.description", "");
-    string fingerprint_orig = base::GetProperty("ro.build.fingerprint", "");
-
-    // replace device-names with correct one
-    if (device_orig != "") {
-        if (description_orig != "")
-            replace(description_orig, device_orig, device);
-
-        if (fingerprint_orig != "")
-            replace(fingerprint_orig, device_orig, device);
-    }
-
-    // update properties
-    property_override("ro.product.model", model);
-    property_override("ro.product.device", device);
-    property_override("ro.build.product", product);
-    property_override("ro.lineage.device", device);
-    property_override("ro.vendor.product.device", device);
-    property_override("ro.build.description", description_orig);
-    property_override("ro.build.fingerprint", fingerprint_orig);
-    property_override("ro.boot.warranty_bit", "0");
-    property_override("ro.warranty_bit", "0");
-    property_override("ro.boot.veritymode", "enforcing");
-    property_override("ro.boot.verifiedbootstate", "green");
-    property_override("ro.boot.flash.locked", "1");
-    property_override("ro.boot.ddrinfo", "00000001");
-    property_override("ro.build.selinux", "1");
-    property_override("ro.fmp_config", "1");
-    property_override("ro.boot.fmp_config", "1");
-    property_override("sys.oem_unlock_allowed", "0");
-    // set model-specific properties
-    if (dualsim == true) {
-        property_override("persist.multisim.config", "dsds");
-        property_override("persist.radio.multisim.config", "dsds");
-        property_override("ro.multisim.simslotcount", "2");
-        property_override("ro.telephony.default_network", "9,9");
-    }
-}
-
-}
+    const std::string device = GetProperty("ro.product.vendor.device", "");
+    LOG(INFO) << "Found bootloader " << bootloader << ". " << "Setting build properties for " << device << ".\n";
 }
