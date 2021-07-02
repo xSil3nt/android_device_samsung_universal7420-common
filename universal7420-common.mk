@@ -53,6 +53,7 @@ PRODUCT_PACKAGES += \
 	audio.primary.universal7420_32 \
 	android.hardware.audio@2.0-impl:32 \
 	android.hardware.audio.effect@2.0-impl:32 \
+	android.hardware.audio.service \
 	libtinycompress
 
 #
